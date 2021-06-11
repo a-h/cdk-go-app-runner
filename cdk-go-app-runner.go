@@ -2,7 +2,9 @@ package main
 
 import (
 	"github.com/aws/aws-cdk-go/awscdk"
-	"github.com/aws/aws-cdk-go/awscdk/awssns"
+	"github.com/aws/aws-cdk-go/awscdk/awsapprunner"
+	"github.com/aws/aws-cdk-go/awscdk/awsecrassets"
+	"github.com/aws/aws-cdk-go/awscdk/awsiam"
 	"github.com/aws/constructs-go/constructs/v3"
 	"github.com/aws/jsii-runtime-go"
 )
@@ -20,9 +22,32 @@ func NewCdkGoAppRunnerStack(scope constructs.Construct, id string, props *CdkGoA
 
 	// The code that defines your stack goes here
 
-	// as an example, here's how you would define an AWS SNS topic:
-	awssns.NewTopic(stack, jsii.String("MyTopic"), &awssns.TopicProps{
-		DisplayName: jsii.String("MyCoolTopic"),
+	image := awsecrassets.NewDockerImageAsset(stack, jsii.String("ApplicationImage"), &awsecrassets.DockerImageAssetProps{
+		Directory: jsii.String("./docker-images/app"),
+	})
+
+	role := awsiam.NewRole(stack, jsii.String("AppRunnerRole"), &awsiam.RoleProps{
+		AssumedBy: awsiam.NewServicePrincipal(jsii.String("build.apprunner.amazonaws.com"), &awsiam.ServicePrincipalOpts{}),
+	})
+	role.AddToPolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Effect:    awsiam.Effect_ALLOW,
+		Actions:   jsii.Strings("ecr:*"),
+		Resources: jsii.Strings("*"),
+	}))
+
+	awsapprunner.NewCfnService(stack, jsii.String("AppRunner"), &awsapprunner.CfnServiceProps{
+		SourceConfiguration: awsapprunner.CfnService_SourceConfigurationProperty{
+			ImageRepository: awsapprunner.CfnService_ImageRepositoryProperty{
+				ImageIdentifier: image.ImageUri(),
+				ImageConfiguration: awsapprunner.CfnService_ImageConfigurationProperty{
+					Port: jsii.String("80"),
+				},
+				ImageRepositoryType: jsii.String("ECR"),
+			},
+			AuthenticationConfiguration: awsapprunner.CfnService_AuthenticationConfigurationProperty{
+				AccessRoleArn: role.RoleArn(),
+			},
+		},
 	})
 
 	return stack
