@@ -40,7 +40,7 @@ func NewCdkGoAppRunnerStack(scope constructs.Construct, id string, props *CdkGoA
 			ImageRepository: awsapprunner.CfnService_ImageRepositoryProperty{
 				ImageIdentifier: image.ImageUri(),
 				ImageConfiguration: awsapprunner.CfnService_ImageConfigurationProperty{
-					Port: jsii.String("80"),
+					Port: jsii.String("8000"),
 				},
 				ImageRepositoryType: jsii.String("ECR"),
 			},
@@ -72,7 +72,9 @@ func env() *awscdk.Environment {
 	// Account/Region-dependent features and context lookups will not work, but a
 	// single synthesized template can be deployed anywhere.
 	//---------------------------------------------------------------------------
-	return nil
+	return &awscdk.Environment{
+		Region: jsii.String("eu-west-1"),
+	}
 
 	// Uncomment if you know exactly what account and region you want to deploy
 	// the stack to. This is the recommendation for production stacks.

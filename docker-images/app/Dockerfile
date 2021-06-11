@@ -1,2 +1,4 @@
-FROM nginx:latest
-COPY ./index.html /usr/share/nginx/html/index.html
+FROM ubuntu:latest
+ADD app ./
+EXPOSE 8000
+ENTRYPOINT ["/app"]
