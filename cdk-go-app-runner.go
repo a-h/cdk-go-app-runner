@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/aws/aws-cdk-go/awscdk"
 	"github.com/aws/aws-cdk-go/awscdk/awsapprunner"
+	"github.com/aws/aws-cdk-go/awscdk/awsdynamodb"
 	"github.com/aws/aws-cdk-go/awscdk/awsecrassets"
 	"github.com/aws/aws-cdk-go/awscdk/awsiam"
 	"github.com/aws/constructs-go/constructs/v3"
@@ -20,33 +21,49 @@ func NewCdkGoAppRunnerStack(scope constructs.Construct, id string, props *CdkGoA
 	}
 	stack := awscdk.NewStack(scope, &id, &sprops)
 
-	// The code that defines your stack goes here
-
+	// Create the Docker image.
 	image := awsecrassets.NewDockerImageAsset(stack, jsii.String("ApplicationImage"), &awsecrassets.DockerImageAssetProps{
 		Directory: jsii.String("./docker-images/app"),
 	})
 
-	role := awsiam.NewRole(stack, jsii.String("AppRunnerRole"), &awsiam.RoleProps{
+	// Create a DynamoDB table.
+	table := awsdynamodb.NewTable(stack, jsii.String("AppRunnerTable"), &awsdynamodb.TableProps{
+		PartitionKey: &awsdynamodb.Attribute{Name: jsii.String("pk"), Type: awsdynamodb.AttributeType_STRING},
+		SortKey:      &awsdynamodb.Attribute{Name: jsii.String("sk"), Type: awsdynamodb.AttributeType_STRING},
+		BillingMode:  awsdynamodb.BillingMode_PAY_PER_REQUEST,
+	})
+
+	// Create an App Runner role that has permission to read and write to the table.
+	appRunnerInstanceRole := awsiam.NewRole(stack, jsii.String("AppRunnerInstanceRole"), &awsiam.RoleProps{
+		AssumedBy: awsiam.NewServicePrincipal(jsii.String("tasks.apprunner.amazonaws.com"), &awsiam.ServicePrincipalOpts{}),
+	})
+	table.GrantReadWriteData(appRunnerInstanceRole)
+
+	// Grant App Runner read access to the Docker container.
+	ecrAccessRole := awsiam.NewRole(stack, jsii.String("AppRunnerRole"), &awsiam.RoleProps{
 		AssumedBy: awsiam.NewServicePrincipal(jsii.String("build.apprunner.amazonaws.com"), &awsiam.ServicePrincipalOpts{}),
 	})
-	role.AddToPolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
-		Effect:    awsiam.Effect_ALLOW,
-		Actions:   jsii.Strings("ecr:*"),
-		Resources: jsii.Strings("*"),
-	}))
+	image.Repository().GrantPull(ecrAccessRole)
 
+	// Create the service.
 	awsapprunner.NewCfnService(stack, jsii.String("AppRunner"), &awsapprunner.CfnServiceProps{
 		SourceConfiguration: awsapprunner.CfnService_SourceConfigurationProperty{
 			ImageRepository: awsapprunner.CfnService_ImageRepositoryProperty{
 				ImageIdentifier: image.ImageUri(),
 				ImageConfiguration: awsapprunner.CfnService_ImageConfigurationProperty{
 					Port: jsii.String("8000"),
+					RuntimeEnvironmentVariables: []awsapprunner.CfnService_KeyValuePairProperty{
+						{Name: jsii.String("TABLE_NAME"), Value: table.TableName()},
+					},
 				},
 				ImageRepositoryType: jsii.String("ECR"),
 			},
 			AuthenticationConfiguration: awsapprunner.CfnService_AuthenticationConfigurationProperty{
-				AccessRoleArn: role.RoleArn(),
+				AccessRoleArn: ecrAccessRole.RoleArn(),
 			},
+		},
+		InstanceConfiguration: awsapprunner.CfnService_InstanceConfigurationProperty{
+			InstanceRoleArn: appRunnerInstanceRole.RoleArn(),
 		},
 	})
 
